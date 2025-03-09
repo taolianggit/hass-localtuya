@@ -421,15 +421,37 @@ class LocalTuyaClimate(LocalTuyaEntity, ClimateEntity):
 
     @property
     def fan_mode(self):
-        """Return the fan setting."""
-        if not (fan_value := self.dp_value(self._fan_speed_dp)):
+        """Return the fan setting (standardized)."""
+        fan_value = self.dp_value(self._fan_speed_dp)
+        if not fan_value:
             return None
+        # Map non-standard fan modes to Home Assistant standard names
+        if isinstance(fan_value, str):
+            fan_value_lower = fan_value.lower()
+            if fan_value_lower in ("mid", "middle"):
+                return "medium"
+            elif fan_value_lower in ("low", "high", "auto", "medium"):
+                return fan_value_lower
         return fan_value
 
     @property
     def fan_modes(self) -> list:
-        """Return the list of available fan modes."""
-        return self._fan_supported_speeds
+        """Return the list of available fan modes (standardized)."""
+        if not self._fan_supported_speeds:
+            return []
+        standard_modes = []
+        for mode in self._fan_supported_speeds:
+            if isinstance(mode, str):
+                m = mode.lower()
+                if m in ("mid", "middle"):
+                    standard_modes.append("medium")
+                elif m in ("low", "high", "auto", "medium"):
+                    standard_modes.append(m)
+                else:
+                    standard_modes.append(mode)
+            else:
+                standard_modes.append(mode)
+        return standard_modes
 
     @property
     def swing_mode(self) -> str | None:
@@ -481,8 +503,24 @@ class LocalTuyaClimate(LocalTuyaEntity, ClimateEntity):
         """Set new target fan mode."""
         if not self._is_on:
             await self._device.set_dp(self._state_on, self._dp_id)
-
-        await self._device.set_dp(fan_mode, self._fan_speed_dp)
+        # Determine the device-specific value to send
+        send_mode = fan_mode
+        if isinstance(fan_mode, str):
+            fm_lower = fan_mode.lower()
+            if fm_lower == "medium":
+                # Map "medium" back to device's expected value ("Mid" or "middle")
+                for mode in self._fan_supported_speeds:
+                    if isinstance(mode, str) and mode.lower() in ("mid", "middle"):
+                        send_mode = mode  # use the original device term
+                        break
+            else:
+                # Match the case/term from the device's supported modes
+                for mode in self._fan_supported_speeds:
+                    if isinstance(mode, str) and mode.lower() == fm_lower:
+                        send_mode = mode
+                        break
+        # Send the mapped fan mode to the device
+        await self._device.set_dp(send_mode, self._fan_speed_dp)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode):
         """Set new target operation mode."""

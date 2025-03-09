@@ -4,3 +4,5 @@ tuyadebug/
 .idea/
 .pre-commit-config.yaml
 .coverage
+custom_components/localtuya/climate.py
+custom_components/localtuya/climate.py
